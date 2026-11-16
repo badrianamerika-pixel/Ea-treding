@@ -19,6 +19,7 @@ jobs:
         shell: pwsh
         run: |
           $installer = "$env:TEMP\mt5setup.exe"
+
           Invoke-WebRequest `
             -Uri "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe" `
             -OutFile $installer
@@ -26,7 +27,28 @@ jobs:
           Start-Process $installer `
             -ArgumentList '/auto', '/path:C:\MT5' -Wait
 
-      - name: Compile GOLD BOT and show log
+      - name: Find MQL5 Standard Library
+        id: library
+        shell: pwsh
+        run: |
+          $tradeFile = Get-ChildItem C:\MT5 `
+            -Filter Trade.mqh -Recurse -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+
+          if (!$tradeFile) {
+            throw "Trade.mqh tidak ditemukan dalam instalasi MT5"
+          }
+
+          $mql5Root = Split-Path `
+            (Split-Path `
+            (Split-Path $tradeFile.FullName))
+
+          "MQL5_ROOT=$mql5Root" >> $env:GITHUB_ENV
+
+          Write-Host "Library ditemukan: $($tradeFile.FullName)"
+          Write-Host "MQL5 root: $mql5Root"
+
+      - name: Compile GOLD BOT
         shell: pwsh
         run: |
           $editor = Get-ChildItem C:\MT5 `
@@ -43,32 +65,27 @@ jobs:
 
           Remove-Item $output, $log -Force -ErrorAction SilentlyContinue
 
-          $args = '/compile:"' + $source + '" /log'
+          $args = '/compile:"' + $source + '" /include:"' + $env:MQL5_ROOT + '" /log'
 
-          $process = Start-Process $editor.FullName `
-            -ArgumentList $args -Wait -PassThru
-
-          Write-Host "MetaEditor exit code: $($process.ExitCode)"
+          Start-Process $editor.FullName `
+            -ArgumentList $args -Wait
 
           if (Test-Path $log) {
-            Write-Host "=== COMPILER LOG ==="
             Get-Content $log
-          } else {
-            Write-Host "Compiler log tidak ditemukan"
           }
 
           if (!(Test-Path $output)) {
-            throw "EX5 belum dihasilkan. Baca compiler log di atas."
+            throw "EX5 belum dihasilkan. Periksa compiler log."
           }
 
-          Write-Host "EX5 berhasil dibuat!"
+          Write-Host "GOLD BOT EX5 berhasil dibuat!"
 
       - name: Upload compiler results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: GOLD-BOT-BUILD-LOG
+          name: GOLD-BOT-BUILD
           path: |
-            GoldBot_v1-1.log
             GoldBot_v1-1.ex5
+            GoldBot_v1-1.log
           if-no-files-found: warn
