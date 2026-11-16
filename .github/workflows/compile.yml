@@ -19,16 +19,14 @@ jobs:
         shell: pwsh
         run: |
           $installer = "$env:TEMP\mt5setup.exe"
-
           Invoke-WebRequest `
             -Uri "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe" `
             -OutFile $installer
 
-          Start-Process -FilePath $installer `
-            -ArgumentList '/auto', '/path:C:\MT5' `
-            -Wait
+          Start-Process $installer `
+            -ArgumentList '/auto', '/path:C:\MT5' -Wait
 
-      - name: Compile GOLD BOT
+      - name: Compile GOLD BOT and show log
         shell: pwsh
         run: |
           $editor = Get-ChildItem C:\MT5 `
@@ -40,20 +38,37 @@ jobs:
           }
 
           $source = (Resolve-Path "GoldBot_v1-1.mq5").Path
-          $output = Join-Path (Get-Location) "GoldBot_v1-1.ex5"
+          $output = [IO.Path]::ChangeExtension($source, ".ex5")
+          $log = [IO.Path]::ChangeExtension($source, ".log")
 
-          Start-Process -FilePath $editor.FullName `
-            -ArgumentList "/compile:$source", "/log" `
-            -Wait
+          Remove-Item $output, $log -Force -ErrorAction SilentlyContinue
 
-          if (!(Test-Path $output)) {
-            throw "File EX5 tidak ditemukan. Periksa log MetaEditor."
+          $args = '/compile:"' + $source + '" /log'
+
+          $process = Start-Process $editor.FullName `
+            -ArgumentList $args -Wait -PassThru
+
+          Write-Host "MetaEditor exit code: $($process.ExitCode)"
+
+          if (Test-Path $log) {
+            Write-Host "=== COMPILER LOG ==="
+            Get-Content $log
+          } else {
+            Write-Host "Compiler log tidak ditemukan"
           }
 
-          Write-Host "GOLD BOT berhasil dikompilasi!"
+          if (!(Test-Path $output)) {
+            throw "EX5 belum dihasilkan. Baca compiler log di atas."
+          }
 
-      - name: Upload EX5
+          Write-Host "EX5 berhasil dibuat!"
+
+      - name: Upload compiler results
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: GOLD-BOT-EX5
-          path: GoldBot_v1-1.ex5
+          name: GOLD-BOT-BUILD-LOG
+          path: |
+            GoldBot_v1-1.log
+            GoldBot_v1-1.ex5
+          if-no-files-found: warn
