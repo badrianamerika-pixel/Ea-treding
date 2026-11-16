@@ -1,87 +1,59 @@
-
-cat > .github/workflows/compile.yml <<'EOF'
 name: GOLD BOT MQL5 Compile
 
 on:
   workflow_dispatch:
-    push:
-        paths:
-              - 'GoldBot_v1-1.mq5'
-                    - '.github/workflows/compile.yml'
+  push:
+    paths:
+      - 'GoldBot_v1-1.mq5'
+      - '.github/workflows/compile.yml'
 
-                    jobs:
-                      compile:
-                          runs-on: windows-latest
+jobs:
+  compile:
+    runs-on: windows-latest
 
-                              steps:
-                                    - name: Checkout repository
-                                            uses: actions/checkout@v4
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-                                                  - name: Download MetaTrader 5
-                                                          shell: pwsh
-                                                                  run: |
-                                                                            $installer = "$env:TEMP\mt5setup.exe"
-                                                                                      Invoke-WebRequest `
-                                                                                                  -Uri "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe" `
-                                                                                                              -OutFile $installer
+      - name: Install MetaTrader 5
+        shell: pwsh
+        run: |
+          $installer = "$env:TEMP\mt5setup.exe"
 
-                                                                                                                        Start-Process $installer `
-                                                                                                                                    -ArgumentList '/auto', '/path:C:\MT5' `
-                                                                                                                                                -Wait
+          Invoke-WebRequest `
+            -Uri "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe" `
+            -OutFile $installer
 
-                                                                                                                                                      - name: Prepare MT5
-                                                                                                                                                              shell: pwsh
-                                                                                                                                                                      run: |
-                                                                                                                                                                                $terminal = Get-ChildItem C:\MT5 `
-                                                                                                                                                                                            -Filter terminal64.exe -Recurse |
-                                                                                                                                                                                                        Select-Object -First 1
+          Start-Process -FilePath $installer `
+            -ArgumentList '/auto', '/path:C:\MT5' `
+            -Wait
 
-                                                                                                                                                                                                                  if (!$terminal) {
-                                                                                                                                                                                                                              throw "MT5 terminal not found"
-                                                                                                                                                                                                                                        }
+      - name: Compile GOLD BOT
+        shell: pwsh
+        run: |
+          $editor = Get-ChildItem C:\MT5 `
+            -Filter metaeditor64.exe -Recurse |
+            Select-Object -First 1
 
-                                                                                                                                                                                                                                                  Start-Process $terminal.FullName `
-                                                                                                                                                                                                                                                              -ArgumentList '/portable'
+          if (!$editor) {
+            throw "MetaEditor tidak ditemukan"
+          }
 
-                                                                                                                                                                                                                                                                        Start-Sleep -Seconds 20
+          $source = (Resolve-Path "GoldBot_v1-1.mq5").Path
+          $output = Join-Path (Get-Location) "GoldBot_v1-1.ex5"
 
-                                                                                                                                                                                                                                                                                  Get-Process terminal64 -ErrorAction SilentlyContinue |
-                                                                                                                                                                                                                                                                                              Stop-Process -Force
+          Start-Process -FilePath $editor.FullName `
+            -ArgumentList "/compile:$source", "/log" `
+            -Wait
 
-                                                                                                                                                                                                                                                                                                    - name: Compile GOLD BOT
-                                                                                                                                                                                                                                                                                                            shell: pwsh
-                                                                                                                                                                                                                                                                                                                    run: |
-                                                                                                                                                                                                                                                                                                                              $editor = Get-ChildItem C:\MT5 `
-                                                                                                                                                                                                                                                                                                                                          -Filter metaeditor64.exe -Recurse |
-                                                                                                                                                                                                                                                                                                                                                      Select-Object -First 1
+          if (!(Test-Path $output)) {
+            throw "File EX5 tidak ditemukan. Periksa log MetaEditor."
+          }
 
-                                                                                                                                                                                                                                                                                                                                                                if (!$editor) {
-                                                                                                                                                                                                                                                                                                                                                                            throw "MetaEditor not found"
-                                                                                                                                                                                                                                                                                                                                                                                      }
+          Write-Host "GOLD BOT berhasil dikompilasi!"
 
-                                                                                                                                                                                                                                                                                                                                                                                                $source = (Resolve-Path "GoldBot_v1-1.mq5").Path
-                                                                                                                                                                                                                                                                                                                                                                                                          $output = Join-Path (Split-Path $source) "GoldBot_v1-1.ex5"
-                                                                                                                                                                                                                                                                                                                                                                                                                    $log = Join-Path (Split-Path $source) "compile.log"
-
-                                                                                                                                                                                                                                                                                                                                                                                                                              Start-Process $editor.FullName `
-                                                                                                                                                                                                                                                                                                                                                                                                                                          -ArgumentList "/compile:$source", "/log" `
-                                                                                                                                                                                                                                                                                                                                                                                                                                                      -Wait
-
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                Start-Sleep -Seconds 3
-
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                          if (!(Test-Path $output)) {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      Get-Content $log -ErrorAction SilentlyContinue
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  throw "Compilation failed: EX5 not generated"
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            }
-
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      Get-Content $log
-
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            - name: Upload compiled EA
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    uses: actions/upload-artifact@v4
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            with:
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      name: GOLD-BOT-EX5
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                path: |
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            GoldBot_v1-1.ex5
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        compile.log
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        EOF
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        
+      - name: Upload EX5
+        uses: actions/upload-artifact@v4
+        with:
+          name: GOLD-BOT-EX5
+          path: GoldBot_v1-1.ex5
