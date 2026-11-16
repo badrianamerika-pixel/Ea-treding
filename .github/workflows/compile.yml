@@ -25,28 +25,50 @@ jobs:
             -OutFile $installer
 
           Start-Process $installer `
-            -ArgumentList '/auto', '/path:C:\MT5' -Wait
+            -ArgumentList '/auto', '/path:C:\MT5' `
+            -Wait
 
-      - name: Find MQL5 Standard Library
-        id: library
+      - name: Initialize MT5 Standard Library
         shell: pwsh
         run: |
-          $tradeFile = Get-ChildItem $env:APPDATA\MetaQuotes\Terminal `
-            -Filter Trade.mqh -Recurse -ErrorAction SilentlyContinue |
+          $terminal = Get-ChildItem C:\MT5 `
+            -Filter terminal64.exe -Recurse |
             Select-Object -First 1
 
-          if (!$tradeFile) {
-            throw "Trade.mqh tidak ditemukan dalam instalasi MT5"
+          if (!$terminal) {
+            throw "Terminal MT5 tidak ditemukan"
           }
 
-          $mql5Root = Split-Path `
-            (Split-Path `
-            (Split-Path $tradeFile.FullName))
+          $tradeFile = Join-Path `
+            (Split-Path $terminal.FullName) `
+            "MQL5\Include\Trade\Trade.mqh"
 
-          "MQL5_ROOT=$mql5Root" >> $env:GITHUB_ENV
+          Write-Host "Menjalankan MT5 portable..."
 
-          Write-Host "Library ditemukan: $($tradeFile.FullName)"
-          Write-Host "MQL5 root: $mql5Root"
+          $process = Start-Process $terminal.FullName `
+            -ArgumentList '/portable' -PassThru
+
+          $ready = $false
+
+          for ($i = 0; $i -lt 90; $i++) {
+            if (Test-Path $tradeFile) {
+              $ready = $true
+              break
+            }
+
+            Start-Sleep -Seconds 2
+          }
+
+          if (!$ready) {
+            throw "Trade.mqh belum tersedia setelah inisialisasi MT5"
+          }
+
+          Write-Host "Standard Library berhasil disiapkan."
+          Write-Host $tradeFile
+
+          if (!$process.HasExited) {
+            Stop-Process -Id $process.Id -Force
+          }
 
       - name: Compile GOLD BOT
         shell: pwsh
@@ -63,24 +85,24 @@ jobs:
           $output = [IO.Path]::ChangeExtension($source, ".ex5")
           $log = [IO.Path]::ChangeExtension($source, ".log")
 
-          Remove-Item $output, $log -Force -ErrorAction SilentlyContinue
-
-          $args = '/compile:"' + $source + '" /include:"' + $env:MQL5_ROOT + '" /log'
+          Remove-Item $output, $log `
+            -Force -ErrorAction SilentlyContinue
 
           Start-Process $editor.FullName `
-            -ArgumentList $args -Wait
+            -ArgumentList "/compile:$source", "/log" `
+            -Wait
 
           if (Test-Path $log) {
             Get-Content $log
           }
 
           if (!(Test-Path $output)) {
-            throw "EX5 belum dihasilkan. Periksa compiler log."
+            throw "Kompilasi gagal. Periksa log."
           }
 
           Write-Host "GOLD BOT EX5 berhasil dibuat!"
 
-      - name: Upload compiler results
+      - name: Upload build results
         if: always()
         uses: actions/upload-artifact@v4
         with:
