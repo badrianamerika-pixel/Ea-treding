@@ -63,7 +63,11 @@ jobs:
             throw "Trade.mqh belum tersedia setelah inisialisasi MT5"
           }
 
+          $mql5Root = Split-Path (Split-Path (Split-Path $tradeFile))
+          "MQL5_ROOT=$mql5Root" >> $env:GITHUB_ENV
+
           Write-Host "Standard Library berhasil disiapkan."
+          Write-Host "MQL5 root: $mql5Root"
           Write-Host $tradeFile
 
           if (!$process.HasExited) {
@@ -88,8 +92,12 @@ jobs:
           Remove-Item $output, $log `
             -Force -ErrorAction SilentlyContinue
 
+          $compileArgs = '/compile:"' + $source + '" /include:"' + $env:MQL5_ROOT + '" /log'
+
+          Write-Host "Include root: $env:MQL5_ROOT"
+
           Start-Process $editor.FullName `
-            -ArgumentList "/compile:$source", "/log" `
+            -ArgumentList $compileArgs `
             -Wait
 
           if (Test-Path $log) {
